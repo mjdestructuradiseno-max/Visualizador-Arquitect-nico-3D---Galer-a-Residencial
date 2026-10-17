@@ -1,0 +1,6 @@
+{
+  "name": "Visualizador Arquitectónico 3D - Galería Residencial",
+  "description": "Visualizador 3D interactivo para diseño y simulación de galerías residenciales con estudio de sombras solares, recorrido en primera persona y opciones de materiales.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

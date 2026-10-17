@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador Arquitectónico 3D - Galería Residencial</title>
+    <meta name="description" content="Visualizador 3D interactivo para diseño y simulación de galerías residenciales con estudio de sombras solares, recorrido en primera persona y opciones de materiales." />
+    <meta property="og:title" content="Visualizador Arquitectónico 3D - Galería Residencial" />
+    <meta property="og:description" content="Visualizador 3D interactivo para diseño y simulación de galerías residenciales con estudio de sombras solares, recorrido en primera persona y opciones de materiales." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <!-- Three.js r128 y Controles Oficiales -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #12151a;
+            color: #f3f4f6;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            overflow: hidden;
+        }
+        #canvas-container canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        .ui-overlay {
+            position: absolute;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .pointer-events-auto {
+            pointer-events: auto;
+        }
+        /* Glassmorphic UI Panels */
+        .glass-panel {
+            background: rgba(18, 24, 33, 0.88);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.45);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.25);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.22);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(16, 185, 129, 0.5);
+        }
+        /* Crosshair for FPS mode */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 14px;
+            height: 14px;
+            pointer-events: none;
+            display: none;
+            z-index: 25;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 0 4px rgba(0,0,0,0.8);
+        }
+        #crosshair::before {
+            top: 6px; left: 0; width: 14px; height: 2px;
+        }
+        #crosshair::after {
+            top: 0; left: 6px; width: 2px; height: 14px;
+        }
+        /* Range slider styling */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+            box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+            transition: transform 0.1s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+    </style>
+</head>
+<body class="select-none bg-[#12151a]">
+
+    <!-- Canvas Container -->
+    <div id="canvas-container"></div>
+    <div id="crosshair"></div>
+
+    <!-- Pantalla de Carga Segura / Fallback de Inicialización -->
+    <div id="loading-screen" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-950 text-white transition-opacity duration-500">
+        <div class="glass-panel p-8 rounded-2xl flex flex-col items-center gap-4 max-w-sm text-center border border-emerald-500/30">
+            <div class="relative w-14 h-14">
+                <div class="w-14 h-14 rounded-full border-4 border-emerald-500/20 border-t-emerald-400 animate-spin"></div>
+                <i class="fa-solid fa-cubes absolute inset-0 m-auto text-emerald-400 text-lg flex items-center justify-center"></i>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-gray-100">Iniciando Visualizador 3D</h3>
+                <p id="loading-status" class="text-xs text-gray-400 mt-1">Cargando librerías Three.js y entorno gráfico...</p>
+            </div>
+            <div id="loading-error-actions" class="hidden flex-col gap-2 w-full mt-2">
+                <p class="text-xs text-rose-400">Hubo una demora al descargar los recursos externos.</p>
+                <button onclick="window.location.reload()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-semibold text-white transition">Reintentar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Overlay Top Header -->
+    <div class="ui-overlay top-0 left-0 right-0 p-4 flex justify-between items-center">
+        <div class="glass-panel rounded-xl px-4 py-2.5 flex items-center gap-3 pointer-events-auto">
+            <i class="fa-solid fa-cubes text-emerald-400 text-xl"></i>
+            <div>
+                <h1 class="font-bold text-sm text-gray-100 tracking-wide uppercase">Galería Residencial 3D</h1>
+                <p class="text-xs text-gray-400">Reconstrucción Arquitectónica Fotorrealista</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 pointer-events-auto">
+            <label class="glass-panel px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-emerald-600/30 transition flex items-center gap-2 text-emerald-300 border-emerald-500/30 cursor-pointer shadow-lg" title="Cargar textura o imagen de fondo">
+                <i class="fa-solid fa-upload"></i>
+                <span class="hidden sm:inline">Cargar Foto Fondo/Plano</span>
+                <input type="file" id="input-bg-image" accept="image/*" class="hidden">
+            </label>
+            <button id="btn-fps-mode" class="glass-panel px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-emerald-600/30 transition flex items-center gap-2 text-emerald-300 border-emerald-500/30 shadow-lg" title="Iniciar recorrido en primera persona">
+                <i class="fa-solid fa-person-walking"></i>
+                <span class="hidden sm:inline">Recorrido Virtual (1ª Persona)</span>
+            </button>
+            <button id="btn-fullscreen" class="glass-panel p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition shadow-lg" title="Alternar Pantalla Completa">
+                <i class="fa-solid fa-expand"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Left Controls Panel: Predefined Camera Views -->
+    <div class="ui-overlay left-4 top-20 bottom-6 flex flex-col justify-between w-64 pointer-events-none">
+        <div class="glass-panel rounded-2xl p-3 flex flex-col gap-1.5 pointer-events-auto max-h-full overflow-y-auto custom-scrollbar">
+            <span class="text-[11px] font-bold tracking-wider text-gray-400 uppercase px-2 mb-1">Vistas Predefinidas</span>
+            
+            <button id="btn-view-photo" onclick="setCameraView('photo')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition text-left">
+                <i class="fa-solid fa-camera text-emerald-400 w-4"></i> Vista Fotografía Original
+            </button>
+            <button id="btn-view-front" onclick="setCameraView('front')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-eye w-4 text-blue-400"></i> Vista Frontal
+            </button>
+            <button id="btn-view-top" onclick="setCameraView('top')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-arrow-down-long w-4 text-amber-400"></i> Vista Superior (Planta)
+            </button>
+            <button id="btn-view-bottom" onclick="setCameraView('bottom')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-arrow-up-long w-4 text-purple-400"></i> Vista Inferior (Techo)
+            </button>
+            <button id="btn-view-iso" onclick="setCameraView('iso')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-cube w-4 text-cyan-400"></i> Vista Isométrica
+            </button>
+            <button id="btn-view-left" onclick="setCameraView('left')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-arrow-right w-4 text-indigo-400"></i> Lateral Izq. (Abierta)
+            </button>
+            <button id="btn-view-right" onclick="setCameraView('right')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-arrow-left w-4 text-orange-400"></i> Lateral Der. (Parrilla)
+            </button>
+            <button id="btn-view-back" onclick="setCameraView('back')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-house w-4 text-red-400"></i> Vista Trasera
+            </button>
+            <button id="btn-view-inside" onclick="setCameraView('inside')" class="view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-chair w-4 text-emerald-400"></i> Interior Galería
+            </button>
+
+            <div class="h-px bg-white/10 my-1"></div>
+
+            <button onclick="resetCamera()" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/10 transition text-left">
+                <i class="fa-solid fa-rotate-right w-4"></i> Restablecer Cámara
+            </button>
+        </div>
+    </div>
+
+    <!-- Right Controls Panel: Customization Parameters -->
+    <div class="ui-overlay right-4 top-20 bottom-6 flex flex-col justify-between w-80 pointer-events-none">
+        <div class="glass-panel rounded-2xl p-4 flex flex-col gap-4 pointer-events-auto max-h-full overflow-y-auto custom-scrollbar">
+            <div class="flex justify-between items-center border-b border-white/10 pb-2">
+                <span class="text-xs font-bold tracking-wider text-gray-200 uppercase flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-emerald-400"></i> Ajustes Arquitectónicos
+                </span>
+                <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30">Tiempo Real</span>
+            </div>
+
+            <!-- Dimensions -->
+            <div class="space-y-3">
+                <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">Dimensiones de Galería</span>
+                
+                <div>
+                    <div class="flex justify-between text-xs text-gray-300 mb-1">
+                        <span>Ancho Galería</span>
+                        <span id="val-width" class="font-mono text-emerald-400">7.20 m</span>
+                    </div>
+                    <input type="range" id="param-width" min="4.0" max="10.0" step="0.2" value="7.2" class="w-full cursor-pointer">
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-xs text-gray-300 mb-1">
+                        <span>Profundidad (Saliente)</span>
+                        <span id="val-depth" class="font-mono text-emerald-400">3.20 m</span>
+                    </div>
+                    <input type="range" id="param-depth" min="2.0" max="5.5" step="0.1" value="3.2" class="w-full cursor-pointer">
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-xs text-gray-300 mb-1">
+                        <span>Altura Frontal</span>
+                        <span id="val-height" class="font-mono text-emerald-400">2.60 m</span>
+                    </div>
+                    <input type="range" id="param-height" min="2.0" max="3.8" step="0.1" value="2.6" class="w-full cursor-pointer">
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-xs text-gray-300 mb-1">
+                        <span>Perfil Transversal (Vigas)</span>
+                        <span id="val-beams" class="font-mono text-emerald-400">9 vigas</span>
+                    </div>
+                    <input type="range" id="param-beams" min="4" max="14" step="1" value="9" class="w-full cursor-pointer">
+                </div>
+            </div>
+
+            <div class="h-px bg-white/10"></div>
+
+            <!-- Materials & Structure -->
+            <div class="space-y-3">
+                <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">Materiales y Techo</span>
+                
+                <div>
+                    <div class="flex justify-between text-xs text-gray-300 mb-1">
+                        <span>Color Estructura Metal</span>
+                        <span id="val-structure-color" class="font-mono text-emerald-400">Grafito Oscuro</span>
+                    </div>
+                    <div class="flex gap-2.5 mt-1.5" id="color-swatches">
+                        <button onclick="setStructureColor('#1f2428')" data-color="#1f2428" class="color-btn w-7 h-7 rounded-full bg-[#1f2428] border-2 border-emerald-400 scale-110 shadow-sm transition" title="Grafito Oscuro"></button>
+                        <button onclick="setStructureColor('#0f0f0f')" data-color="#0f0f0f" class="color-btn w-7 h-7 rounded-full bg-[#0f0f0f] border-2 border-transparent hover:scale-110 transition" title="Negro Mate"></button>
+                        <button onclick="setStructureColor('#3a3f45')" data-color="#3a3f45" class="color-btn w-7 h-7 rounded-full bg-[#3a3f45] border-2 border-transparent hover:scale-110 transition" title="Gris Acero"></button>
+                        <button onclick="setStructureColor('#e2e8f0')" data-color="#e2e8f0" class="color-btn w-7 h-7 rounded-full bg-[#e2e8f0] border-2 border-transparent hover:scale-110 transition" title="Blanco Galvalume"></button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-xs text-gray-300 mb-1">
+                        <span>Opacidad Policarbonato</span>
+                        <span id="val-roof-opacity" class="font-mono text-emerald-400">75%</span>
+                    </div>
+                    <input type="range" id="param-roof-opacity" min="0.2" max="1.0" step="0.05" value="0.75" class="w-full cursor-pointer">
+                </div>
+            </div>
+
+            <div class="h-px bg-white/10"></div>
+
+            <!-- Visibility & Environment -->
+            <div class="space-y-2.5">
+                <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">Entorno e Iluminación</span>
+                
+                <label class="flex justify-between items-center py-0.5 cursor-pointer">
+                    <span class="text-xs text-gray-300">Sombras de Sol Realistas</span>
+                    <input type="checkbox" id="toggle-shadows" checked class="w-4 h-4 accent-emerald-500 rounded cursor-pointer">
+                </label>
+
+                <label class="flex justify-between items-center py-0.5 cursor-pointer">
+                    <span class="text-xs text-gray-300">Mobiliario (Sillones Acapulco)</span>
+                    <input type="checkbox" id="toggle-furniture" checked class="w-4 h-4 accent-emerald-500 rounded cursor-pointer">
+                </label>
+
+                <label class="flex justify-between items-center py-0.5 cursor-pointer">
+                    <span class="text-xs text-gray-300">Sector Parrilla y Mesada</span>
+                    <input type="checkbox" id="toggle-grill" checked class="w-4 h-4 accent-emerald-500 rounded cursor-pointer">
+                </label>
+
+                <div class="pt-1">
+                    <div class="flex justify-between text-xs text-gray-300 mb-1">
+                        <span>Hora del Día (Sol)</span>
+                        <span id="val-sun" class="font-mono text-emerald-400">14:30 Hs</span>
+                    </div>
+                    <input type="range" id="param-sun" min="7" max="19" step="0.25" value="14.5" class="w-full cursor-pointer">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom FPS Controls Hint -->
+    <div id="fps-instructions" class="ui-overlay bottom-6 left-1/2 transform -translate-x-1/2 hidden pointer-events-auto">
+        <div class="glass-panel px-6 py-3 rounded-full flex items-center gap-5 text-xs text-gray-200 border border-emerald-500/40 bg-gray-900/95 shadow-2xl">
+            <span class="flex items-center gap-1.5"><kbd class="bg-white/20 px-2 py-0.5 rounded font-mono text-white text-[11px]">W A S D</kbd> Moverse</span>
+            <span class="flex items-center gap-1.5"><kbd class="bg-white/20 px-2 py-0.5 rounded font-mono text-white text-[11px]">Ratón</kbd> Mirar</span>
+            <span class="flex items-center gap-1.5"><kbd class="bg-white/20 px-2 py-0.5 rounded font-mono text-white text-[11px]">Shift</kbd> Correr</span>
+            <button onclick="exitFpsMode()" class="px-2.5 py-0.5 rounded-full bg-emerald-600/50 hover:bg-emerald-600 text-white font-medium transition flex items-center gap-1">
+                <kbd class="font-mono text-[10px]">ESC</kbd> Salir
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- PARÁMETROS GLOBALES Y CONFIGURACIÓN ---
+        const config = {
+            width: 7.2,       // Ancho total galería (X) en metros
+            depth: 3.2,       // Profundidad galería (Z) en metros
+            height: 2.6,      // Altura libre columna frontal (Y) en metros
+            beamCount: 9,     // Cantidad de vigas secundarias transversales
+            structureColor: 0x1f2428,
+            roofOpacity: 0.75,
+            showFurniture: true,
+            showGrill: true,
+            shadowsEnabled: true,
+            sunHour: 14.5
+        };
+
+        // Escena, Cámara, Renderizador y Controles
+        let scene, camera, renderer, orbitControls, fpsControls;
+        let isFpsMode = false;
+        let galleryGroup; // Contenedor dinámico de la galería reconstruida
+        let sunLight, ambientLight;
+
+        // Movimiento FPS y Cinética
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, isSprinting = false;
+        const velocity = new (window.THREE ? window.THREE.Vector3 : function() { this.x=0; this.y=0; this.z=0; })();
+        const direction = new (window.THREE ? window.THREE.Vector3 : function() { this.x=0; this.y=0; this.z=0; })();
+        let prevTime = performance.now();
+
+        // Materiales Reutilizables PBR
+        let matMetal, matRoof, matWall, matFloor, matGlass, matGrill, matWood, matGrass;
+
+        // Medidas seguras de viewport
+        function getViewportDimensions() {
+            const container = document.getElementById('canvas-container');
+            const w = (container && container.clientWidth > 0) ? container.clientWidth : (window.innerWidth || 800);
+            const h = (container && container.clientHeight > 0) ? container.clientHeight : (window.innerHeight || 600);
+            return { width: w, height: h };
+        }
+
+        // --- INICIALIZACIÓN SEGURA ---
+        function safeInit() {
+            // Verificar dependencias necesarias
+            if (typeof THREE === 'undefined' || typeof THREE.OrbitControls === 'undefined') {
+                console.warn("Dependencias Three.js aún no disponibles. Esperando...");
+                return false;
+            }
+
+            try {
+                init();
+                // Ocultar pantalla de carga
+                const loader = document.getElementById('loading-screen');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.remove(), 550);
+                }
+                return true;
+            } catch (err) {
+                console.error("Error durante la inicialización de Three.js:", err);
+                const status = document.getElementById('loading-status');
+                const actions = document.getElementById('loading-error-actions');
+                if (status) status.textContent = "Error al inicializar el contexto WebGL: " + err.message;
+                if (actions) actions.classList.remove('hidden');
+                return false;
+            }
+        }
+
+        // Loop de verificación de scripts externos
+        let checkAttempts = 0;
+        function ensureDependenciesAndStart() {
+            if (safeInit()) return;
+
+            checkAttempts++;
+            if (checkAttempts < 60) {
+                setTimeout(ensureDependenciesAndStart, 100);
+            } else {
+                console.error("Tiempo de espera agotado al cargar Three.js CDN.");
+                const status = document.getElementById('loading-status');
+                const actions = document.getElementById('loading-error-actions');
+                if (status) status.textContent = "Tiempo de espera agotado al descargar Three.js o sus controles.";
+                if (actions) actions.classList.remove('hidden');
+            }
+        }
+
+        // --- INICIALIZACIÓN DE LA ESCENA ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+            const { width, height } = getViewportDimensions();
+
+            // 1. Escena con cielo y niebla
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xdce7f0);
+            scene.fog = new THREE.FogExp2(0xdce7f0, 0.015);
+
+            // 2. Cámara de Perspectiva
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 120);
+            camera.position.set(0.1, 1.75, 5.2);
+
+            // 3. Renderizador WebGL de Alto Rendimiento
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            renderer.setSize(width, height);
+            renderer.shadowMap.enabled = config.shadowsEnabled;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.1;
+            
+            // Limpiar contenedor previo
+            while (container.firstChild) {
+                container.removeChild(container.firstChild);
+            }
+            container.appendChild(renderer.domElement);
+
+            // 4. OrbitControls con amortiguación
+            orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+            orbitControls.enableDamping = true;
+            orbitControls.dampingFactor = 0.05;
+            orbitControls.maxPolarAngle = Math.PI / 2 + 0.04;
+            orbitControls.minDistance = 0.8;
+            orbitControls.maxDistance = 35.0;
+            orbitControls.target.set(0, 1.5, -0.5);
+
+            // 5. FPS PointerLockControls (con fallback si no está cargado)
+            if (typeof THREE.PointerLockControls !== 'undefined') {
+                fpsControls = new THREE.PointerLockControls(camera, document.body);
+
+                fpsControls.addEventListener('lock', () => {
+                    isFpsMode = true;
+                    document.getElementById('crosshair').style.display = 'block';
+                    document.getElementById('fps-instructions').classList.remove('hidden');
+                });
+
+                fpsControls.addEventListener('unlock', () => {
+                    isFpsMode = false;
+                    document.getElementById('crosshair').style.display = 'none';
+                    document.getElementById('fps-instructions').classList.add('hidden');
+                });
+            } else {
+                console.warn("PointerLockControls no disponible en este entorno.");
+            }
+
+            // 6. Iluminación y Sol
+            setupLighting();
+
+            // 7. Materiales PBR y Texturas Procedurales
+            initMaterials();
+
+            // 8. Reconstrucción Geométrica Completa
+            buildFullScene();
+
+            // 9. Eventos de UI y redimensionamiento
+            setupUIListeners();
+            window.addEventListener('resize', onWindowResize);
+
+            // 10. Iniciar Loop de Animación
+            prevTime = performance.now();
+            animate();
+        }
+
+        function setupLighting() {
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+            scene.add(ambientLight);
+
+            sunLight = new THREE.DirectionalLight(0xfff8ea, 1.4);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 35;
+            
+            const d = 11;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            sunLight.shadow.bias = -0.0003;
+
+            scene.add(sunLight);
+            updateSunPosition(config.sunHour);
+        }
+
+        function updateSunPosition(hour) {
+            const rad = ((hour - 7) / 12) * Math.PI;
+            const sunX = Math.cos(rad) * 12;
+            const sunY = Math.sin(rad) * 12;
+            const sunZ = Math.sin(rad * 0.5) * 8 + 3;
+
+            sunLight.position.set(sunX, Math.max(sunY, 1.0), sunZ);
+            
+            if (hour < 9 || hour > 17) {
+                sunLight.color.setHex(0xffcb8e);
+                sunLight.intensity = 0.95;
+            } else {
+                sunLight.color.setHex(0xfff8ea);
+                sunLight.intensity = 1.35;
+            }
+        }
+
+        function initMaterials() {
+            const maxAnisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 4;
+
+            // Cerámica Piso
+            const floorCanvas = document.createElement('canvas');
+            floorCanvas.width = 512; floorCanvas.height = 512;
+            const fctx = floorCanvas.getContext('2d');
+            fctx.fillStyle = '#c5bcb0';
+            fctx.fillRect(0,0,512,512);
+            fctx.strokeStyle = '#9e9488';
+            fctx.lineWidth = 3;
+            const tileW = 128, tileH = 64;
+            for(let y=0; y<=512; y+=tileH) { fctx.beginPath(); fctx.moveTo(0,y); fctx.lineTo(512,y); fctx.stroke(); }
+            for(let x=0; x<=512; x+=tileW) { fctx.beginPath(); fctx.moveTo(x,0); fctx.lineTo(x,512); fctx.stroke(); }
+            for(let i=0; i<4000; i++) {
+                fctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+                fctx.fillRect(Math.random()*512, Math.random()*512, 3, 3);
+            }
+            const floorTexture = new THREE.CanvasTexture(floorCanvas);
+            floorTexture.wrapS = THREE.RepeatWrapping;
+            floorTexture.wrapT = THREE.RepeatWrapping;
+            floorTexture.repeat.set(5, 3.5);
+            floorTexture.anisotropy = maxAnisotropy;
+
+            matFloor = new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.4, metalness: 0.08 });
+
+            // Pared Beige Arena
+            const wallCanvas = document.createElement('canvas');
+            wallCanvas.width = 256; wallCanvas.height = 256;
+            const wctx = wallCanvas.getContext('2d');
+            wctx.fillStyle = '#d9b982';
+            wctx.fillRect(0,0,256,256);
+            for(let i=0; i<2500; i++) {
+                wctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+                wctx.fillRect(Math.random()*256, Math.random()*256, 2, 2);
+            }
+            const wallTexture = new THREE.CanvasTexture(wallCanvas);
+            wallTexture.wrapS = THREE.RepeatWrapping;
+            wallTexture.wrapT = THREE.RepeatWrapping;
+            wallTexture.repeat.set(4, 4);
+            wallTexture.anisotropy = maxAnisotropy;
+
+            matWall = new THREE.MeshStandardMaterial({ map: wallTexture, roughness: 0.88, metalness: 0.02 });
+
+            // Metal Estructura Grafito
+            matMetal = new THREE.MeshStandardMaterial({ color: config.structureColor, roughness: 0.38, metalness: 0.7 });
+
+            // Policarbonato Translúcido
+            matRoof = new THREE.MeshPhysicalMaterial({
+                color: 0xf8fafc,
+                transmission: 0.65,
+                opacity: config.roofOpacity,
+                transparent: true,
+                roughness: 0.2,
+                ior: 1.35,
+                side: THREE.DoubleSide,
+                depthWrite: true
+            });
+
+            // Vidrio
+            matGlass = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.25,
+                roughness: 0.08,
+                transmission: 0.9,
+                ior: 1.5
+            });
+
+            // Césped
+            const grassCanvas = document.createElement('canvas');
+            grassCanvas.width = 256; grassCanvas.height = 256;
+            const gctx = grassCanvas.getContext('2d');
+            gctx.fillStyle = '#5c7834';
+            gctx.fillRect(0,0,256,256);
+            for(let i=0; i<3500; i++) {
+                gctx.fillStyle = Math.random() > 0.5 ? '#739642' : '#455d25';
+                gctx.fillRect(Math.random()*256, Math.random()*256, 2, 3);
+            }
+            const grassTexture = new THREE.CanvasTexture(grassCanvas);
+            grassTexture.wrapS = THREE.RepeatWrapping;
+            grassTexture.wrapT = THREE.RepeatWrapping;
+            grassTexture.repeat.set(12, 12);
+            grassTexture.anisotropy = maxAnisotropy;
+
+            matGrass = new THREE.MeshStandardMaterial({ map: grassTexture, roughness: 0.9, metalness: 0.0 });
+
+            // Mampostería Parrilla y Mesada
+            matGrill = new THREE.MeshStandardMaterial({ color: 0xd3be9b, roughness: 0.75 });
+
+            // Madera
+            matWood = new THREE.MeshStandardMaterial({ color: 0x9e3818, roughness: 0.55 });
+        }
+
+        function buildFullScene() {
+            if (galleryGroup) scene.remove(galleryGroup);
+            
+            galleryGroup = new THREE.Group();
+            scene.add(galleryGroup);
+
+            // 1. PISO Y JARDÍN
+            const floorWidth = config.width + 1.2;
+            const floorDepth = config.depth + 0.6;
+
+            const floorGeo = new THREE.BoxGeometry(floorWidth, 0.1, floorDepth);
+            const floorMesh = new THREE.Mesh(floorGeo, matFloor);
+            floorMesh.position.set(0.2, -0.05, -config.depth/2 + 0.2);
+            floorMesh.receiveShadow = true;
+            galleryGroup.add(floorMesh);
+
+            const grassGeo = new THREE.PlaneGeometry(40, 40);
+            const grassMesh = new THREE.Mesh(grassGeo, matGrass);
+            grassMesh.rotation.x = -Math.PI / 2;
+            grassMesh.position.set(0, -0.1, 5);
+            grassMesh.receiveShadow = true;
+            galleryGroup.add(grassMesh);
+
+            // 2. PAREDES DE LA CASA (Fiel a la foto arquitectónica)
+            const houseWallGroup = new THREE.Group();
+            
+            const mainWallGeo = new THREE.BoxGeometry(config.width + 2, 6.5, 0.3);
+            const mainWall = new THREE.Mesh(mainWallGeo, matWall);
+            mainWall.position.set(0.6, 3.25, -config.depth);
+            mainWall.castShadow = true;
+            mainWall.receiveShadow = true;
+            houseWallGroup.add(mainWall);
+
+            // Lado derecho cerrado con zona de parrilla
+            const rightWallGeo = new THREE.BoxGeometry(0.3, 6.5, 4.5);
+            const rightWall = new THREE.Mesh(rightWallGeo, matWall);
+            rightWall.position.set(config.width/2 + 1.4, 3.25, -config.depth + 2.15);
+            rightWall.castShadow = true;
+            rightWall.receiveShadow = true;
+            houseWallGroup.add(rightWall);
+
+            galleryGroup.add(houseWallGroup);
+
+            // Rejilla de ventilación
+            const ventGeo = new THREE.BoxGeometry(0.2, 0.2, 0.02);
+            const ventMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+            const vent = new THREE.Mesh(ventGeo, ventMat);
+            vent.position.set(-1.4, 0.4, -config.depth + 0.16);
+            galleryGroup.add(vent);
+
+            // Reflector LED
+            const lightReflectorGeo = new THREE.BoxGeometry(0.12, 0.08, 0.06);
+            const reflector = new THREE.Mesh(lightReflectorGeo, matMetal);
+            reflector.position.set(2.0, 2.3, -config.depth + 0.16);
+            galleryGroup.add(reflector);
+
+            // 3. ABERTURAS, ESTRUCTURA Y MOBILIARIO
+            buildDoorsAndWindows(-config.depth + 0.16);
+            buildGalleryStructure();
+            if (config.showGrill) buildGrillSector();
+            if (config.showFurniture) buildFurniture();
+            buildEnvironment();
+        }
+
+        function buildGalleryStructure() {
+            const structGroup = new THREE.Group();
+            const w = config.width;
+            const d = config.depth;
+            const h = config.height;
+            const profileThick = 0.12;
+
+            const colGeo = new THREE.BoxGeometry(profileThick, h, profileThick);
+            
+            // Columna Frontal Izquierda
+            const colLeft = new THREE.Mesh(colGeo, matMetal);
+            colLeft.position.set(-w/2 + 0.1, h/2, 0);
+            colLeft.castShadow = true;
+            structGroup.add(colLeft);
+
+            const basePlateGeo = new THREE.BoxGeometry(0.22, 0.015, 0.22);
+            const basePlateLeft = new THREE.Mesh(basePlateGeo, matMetal);
+            basePlateLeft.position.set(-w/2 + 0.1, 0.008, 0);
+            structGroup.add(basePlateLeft);
+
+            // Columna Frontal Derecha
+            const colRight = new THREE.Mesh(colGeo, matMetal);
+            colRight.position.set(w/2 - 0.1, h/2, 0);
+            colRight.castShadow = true;
+            structGroup.add(colRight);
+
+            const basePlateRight = new THREE.Mesh(basePlateGeo, matMetal);
+            basePlateRight.position.set(w/2 - 0.1, 0.008, 0);
+            structGroup.add(basePlateRight);
+
+            // Vigas Perimetrales
+            const frontBeamGeo = new THREE.BoxGeometry(w + 0.2, profileThick * 1.5, profileThick);
+            const frontBeam = new THREE.Mesh(frontBeamGeo, matMetal);
+            frontBeam.position.set(0, h + profileThick/2, 0);
+            frontBeam.castShadow = true;
+            structGroup.add(frontBeam);
+
+            const wallH = h + 0.35;
+            const sideBeamGeo = new THREE.BoxGeometry(profileThick, profileThick, d);
+            
+            const leftBeam = new THREE.Mesh(sideBeamGeo, matMetal);
+            leftBeam.position.set(-w/2 + 0.1, h + 0.15, -d/2);
+            leftBeam.rotation.x = Math.atan2(0.35, d);
+            leftBeam.castShadow = true;
+            structGroup.add(leftBeam);
+
+            const rightBeam = new THREE.Mesh(sideBeamGeo, matMetal);
+            rightBeam.position.set(w/2 - 0.1, h + 0.15, -d/2);
+            rightBeam.rotation.x = Math.atan2(0.35, d);
+            rightBeam.castShadow = true;
+            structGroup.add(rightBeam);
+
+            const backBeamGeo = new THREE.BoxGeometry(w + 0.2, profileThick, profileThick);
+            const backBeam = new THREE.Mesh(backBeamGeo, matMetal);
+            backBeam.position.set(0, wallH, -d);
+            backBeam.castShadow = true;
+            structGroup.add(backBeam);
+
+            // Vigas Transversales Paramétricas
+            const count = Math.max(2, config.beamCount);
+            const beamSpacing = w / (count - 1);
+            const subBeamThick = 0.05;
+
+            for (let i = 0; i < count; i++) {
+                const xPos = -w/2 + 0.1 + i * beamSpacing;
+                const beamGeo = new THREE.BoxGeometry(subBeamThick, subBeamThick * 1.5, d);
+                const beam = new THREE.Mesh(beamGeo, matMetal);
+                beam.position.set(xPos, h + 0.17, -d/2);
+                beam.rotation.x = Math.atan2(0.35, d);
+                beam.castShadow = true;
+                structGroup.add(beam);
+            }
+
+            // Correas Transversales Secundarias
+            for (let j = 1; j <= 3; j++) {
+                const zPos = -(d / 4) * j;
+                const crossBeamGeo = new THREE.BoxGeometry(w, subBeamThick, subBeamThick);
+                const crossBeam = new THREE.Mesh(crossBeamGeo, matMetal);
+                const yPos = h + (1 - (j/4)) * 0.35;
+                crossBeam.position.set(0, yPos + 0.05, zPos);
+                crossBeam.castShadow = true;
+                structGroup.add(crossBeam);
+            }
+
+            // Paneles de Policarbonato
+            matRoof.opacity = config.roofOpacity;
+            const roofGeo = new THREE.BoxGeometry(w + 0.15, 0.02, d + 0.1);
+            const roofMesh = new THREE.Mesh(roofGeo, matRoof);
+            roofMesh.position.set(0, h + 0.22, -d/2);
+            roofMesh.rotation.x = Math.atan2(0.35, d);
+            roofMesh.castShadow = config.shadowsEnabled;
+            roofMesh.receiveShadow = true;
+            structGroup.add(roofMesh);
+
+            // Farol colonial negro de pared
+            buildLamp(-w/2 + 0.8, h - 0.25, -d + 0.1);
+
+            galleryGroup.add(structGroup);
+        }
+
+        function buildLamp(x, y, z) {
+            const lampGroup = new THREE.Group();
+            lampGroup.position.set(x, y, z);
+
+            const matLamp = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4 });
+            const matGlassLit = new THREE.MeshBasicMaterial({ color: 0xfff3d1, transparent: true, opacity: 0.85 });
+
+            const base = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.04), matLamp);
+            lampGroup.add(base);
+
+            const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.1), matLamp);
+            arm.position.set(0, -0.02, 0.05);
+            arm.rotation.x = Math.PI / 3;
+            lampGroup.add(arm);
+
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.04, 0.18, 6), matGlassLit);
+            body.position.set(0, -0.08, 0.09);
+            lampGroup.add(body);
+
+            const topCap = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.06, 6), matLamp);
+            topCap.position.set(0, 0.02, 0.09);
+            lampGroup.add(topCap);
+
+            const pointLight = new THREE.PointLight(0xffddaa, 0.8, 4.0);
+            pointLight.position.set(0, -0.08, 0.12);
+            lampGroup.add(pointLight);
+
+            galleryGroup.add(lampGroup);
+        }
+
+        function buildFurniture() {
+            const furnitureGroup = new THREE.Group();
+            const matFrame = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.5 });
+            const matCord = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
+
+            function createAcapulcoChair() {
+                const chair = new THREE.Group();
+                const ringGeo = new THREE.TorusGeometry(0.42, 0.015, 8, 24);
+                const ring = new THREE.Mesh(ringGeo, matFrame);
+                ring.rotation.x = Math.PI / 3;
+                ring.scale.set(1.0, 1.25, 0.8);
+                ring.position.y = 0.45;
+                chair.add(ring);
+
+                const coneGeo = new THREE.ConeGeometry(0.38, 0.4, 16, 1, true);
+                const cone = new THREE.Mesh(coneGeo, matCord);
+                cone.rotation.x = -Math.PI / 6;
+                cone.position.set(0, 0.35, -0.05);
+                chair.add(cone);
+
+                const legGeo = new THREE.CylinderGeometry(0.01, 0.008, 0.42, 8);
+                const leg1 = new THREE.Mesh(legGeo, matFrame);
+                leg1.position.set(-0.2, 0.2, 0.15);
+                leg1.rotation.z = 0.25;
+                leg1.rotation.x = -0.15;
+                chair.add(leg1);
+
+                const leg2 = new THREE.Mesh(legGeo, matFrame);
+                leg2.position.set(0.2, 0.2, 0.15);
+                leg2.rotation.z = -0.25;
+                leg2.rotation.x = -0.15;
+                chair.add(leg2);
+
+                const leg3 = new THREE.Mesh(legGeo, matFrame);
+                leg3.position.set(0, 0.2, -0.22);
+                leg3.rotation.x = 0.3;
+                chair.add(leg3);
+
+                return chair;
+            }
+
+            const chairLeft = createAcapulcoChair();
+            chairLeft.position.set(-0.7, 0, -1.1);
+            chairLeft.rotation.y = Math.PI / 6;
+            chairLeft.traverse(c => { if(c.isMesh) c.castShadow = true; });
+            furnitureGroup.add(chairLeft);
+
+            const chairRight = createAcapulcoChair();
+            chairRight.position.set(0.8, 0, -1.1);
+            chairRight.rotation.y = -Math.PI / 6;
+            chairRight.traverse(c => { if(c.isMesh) c.castShadow = true; });
+            furnitureGroup.add(chairRight);
+
+            const tableGroup = new THREE.Group();
+            tableGroup.position.set(0.05, 0, -1.2);
+
+            const tBaseGeo = new THREE.ConeGeometry(0.25, 0.38, 12, 1, true);
+            const tBase = new THREE.Mesh(tBaseGeo, matCord);
+            tBase.position.y = 0.19;
+            tBase.rotation.x = Math.PI;
+            tableGroup.add(tBase);
+
+            const tTopGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.015, 24);
+            const tTop = new THREE.Mesh(tTopGeo, matGlass);
+            tTop.position.y = 0.38;
+            tableGroup.add(tTop);
+
+            tableGroup.traverse(c => { if(c.isMesh) c.castShadow = true; });
+            furnitureGroup.add(tableGroup);
+
+            galleryGroup.add(furnitureGroup);
+        }
+
+        function buildDoorsAndWindows(zWall) {
+            const dwGroup = new THREE.Group();
+
+            const doorW = 2.2;
+            const doorH = 2.05;
+            const doorX = -0.4;
+
+            const matFrameWhite = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.3 });
+            const frameGeo = new THREE.BoxGeometry(doorW, doorH, 0.08);
+            const frameMesh = new THREE.Mesh(frameGeo, matFrameWhite);
+            frameMesh.position.set(doorX, doorH/2, zWall + 0.02);
+            dwGroup.add(frameMesh);
+
+            const glassGeo = new THREE.PlaneGeometry(doorW * 0.46, doorH * 0.9);
+            const glassLeft = new THREE.Mesh(glassGeo, matGlass);
+            glassLeft.position.set(doorX - doorW*0.22, doorH/2, zWall + 0.04);
+            dwGroup.add(glassLeft);
+
+            const glassRight = new THREE.Mesh(glassGeo, matGlass);
+            glassRight.position.set(doorX + doorW*0.22, doorH/2, zWall + 0.04);
+            dwGroup.add(glassRight);
+
+            const matCurtain = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, side: THREE.DoubleSide });
+            const curtainGeo = new THREE.PlaneGeometry(doorW * 0.45, doorH * 0.88);
+            const curtain = new THREE.Mesh(curtainGeo, matCurtain);
+            curtain.position.set(doorX - doorW*0.22 - 0.05, doorH/2 - 0.05, zWall - 0.02);
+            dwGroup.add(curtain);
+
+            const grillGroup = new THREE.Group();
+            grillGroup.position.set(doorX + doorW*0.22, doorH/2, zWall + 0.06);
+
+            const gridFrame = new THREE.Mesh(new THREE.BoxGeometry(doorW*0.48, doorH*0.95, 0.02), matMetal);
+            grillGroup.add(gridFrame);
+
+            for(let x = -doorW*0.2; x <= doorW*0.2; x += 0.09) {
+                const bar = new THREE.Mesh(new THREE.BoxGeometry(0.012, doorH*0.92, 0.012), matMetal);
+                bar.position.x = x;
+                grillGroup.add(bar);
+            }
+            for(let y = -doorH*0.4; y <= doorH*0.4; y += 0.12) {
+                const bar = new THREE.Mesh(new THREE.BoxGeometry(doorW*0.46, 0.012, 0.012), matMetal);
+                bar.position.y = y;
+                grillGroup.add(bar);
+            }
+            dwGroup.add(grillGroup);
+
+            const winW = 1.3;
+            const winH = 1.1;
+            const winY = 4.4;
+
+            const winPositionsX = [1.8, 3.4];
+            winPositionsX.forEach(wx => {
+                const winFrame = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, 0.06), matFrameWhite);
+                winFrame.position.set(wx, winY, zWall + 0.02);
+                dwGroup.add(winFrame);
+
+                const winGlass = new THREE.Mesh(new THREE.PlaneGeometry(winW*0.9, winH*0.9), matGlass);
+                winGlass.position.set(wx, winY, zWall + 0.03);
+                dwGroup.add(winGlass);
+
+                const winGrill = new THREE.Group();
+                winGrill.position.set(wx, winY, zWall + 0.05);
+                for(let bx = -winW*0.42; bx <= winW*0.42; bx += 0.11) {
+                    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.01, winH*0.9, 0.01), matMetal);
+                    bar.position.x = bx;
+                    winGrill.add(bar);
+                }
+                for(let by = -winH*0.4; by <= winH*0.4; by += 0.18) {
+                    const bar = new THREE.Mesh(new THREE.BoxGeometry(winW*0.88, 0.01, 0.01), matMetal);
+                    bar.position.y = by;
+                    winGrill.add(bar);
+                }
+                dwGroup.add(winGrill);
+            });
+
+            galleryGroup.add(dwGroup);
+        }
+
+        function buildGrillSector() {
+            const grillGroup = new THREE.Group();
+
+            const xStart = config.width / 2 - 2.2;
+            const zPos = -config.depth + 1.2;
+
+            const counterW = 1.3;
+            const counterH = 0.88;
+            const counterD = 0.65;
+
+            const counterGeo = new THREE.BoxGeometry(counterW, counterH, counterD);
+            const counter = new THREE.Mesh(counterGeo, matGrill);
+            counter.position.set(xStart, counterH/2, zPos);
+            counter.castShadow = true;
+            counter.receiveShadow = true;
+            grillGroup.add(counter);
+
+            const sinkGeo = new THREE.BoxGeometry(0.38, 0.02, 0.32);
+            const sinkMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.85, roughness: 0.2 });
+            const sink = new THREE.Mesh(sinkGeo, sinkMat);
+            sink.position.set(xStart + 0.25, counterH + 0.01, zPos);
+            grillGroup.add(sink);
+
+            const tapGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.16);
+            const tap = new THREE.Mesh(tapGeo, sinkMat);
+            tap.position.set(xStart + 0.25, counterH + 0.1, zPos - 0.12);
+            grillGroup.add(tap);
+
+            for(let px of [-0.3, -0.1]) {
+                const potGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.08, 12);
+                const potMat = new THREE.MeshStandardMaterial({ color: 0xbf6747 });
+                const pot = new THREE.Mesh(potGeo, potMat);
+                pot.position.set(xStart + px, counterH + 0.04, zPos - 0.1);
+                grillGroup.add(pot);
+            }
+
+            const washerGeo = new THREE.BoxGeometry(0.5, 0.75, 0.55);
+            const washerMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.3 });
+            const washer = new THREE.Mesh(washerGeo, washerMat);
+            washer.position.set(xStart + 0.85, 0.38, zPos - 0.05);
+            grillGroup.add(washer);
+
+            const grillW = 1.1;
+            const grillX = xStart + counterW/2 + grillW/2 + 0.2;
+
+            const bbqBase = new THREE.Mesh(new THREE.BoxGeometry(grillW, 0.9, 0.8), matGrill);
+            bbqBase.position.set(grillX, 0.45, zPos);
+            bbqBase.castShadow = true;
+            grillGroup.add(bbqBase);
+
+            const hoodGeo = new THREE.CylinderGeometry(0.25, 0.65, 0.9, 4);
+            const hood = new THREE.Mesh(hoodGeo, matMetal);
+            hood.position.set(grillX, 2.1, zPos);
+            hood.rotation.y = Math.PI / 4;
+            hood.castShadow = true;
+            grillGroup.add(hood);
+
+            const tableW = 1.2;
+            const tableH = 0.76;
+            const tableD = 0.65;
+            const woodTable = new THREE.Group();
+            woodTable.position.set(grillX + 0.2, 0, zPos + 0.8);
+
+            const tTop = new THREE.Mesh(new THREE.BoxGeometry(tableW, 0.04, tableD), matWood);
+            tTop.position.y = tableH;
+            tTop.castShadow = true;
+            woodTable.add(tTop);
+
+            for(let px of [-tableW/2 + 0.05, tableW/2 - 0.05]) {
+                for(let pz of [-tableD/2 + 0.05, tableD/2 - 0.05]) {
+                    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, tableH, 0.06), matWood);
+                    leg.position.set(px, tableH/2, pz);
+                    leg.castShadow = true;
+                    woodTable.add(leg);
+                }
+            }
+            grillGroup.add(woodTable);
+
+            galleryGroup.add(grillGroup);
+        }
+
+        function buildEnvironment() {
+            const envGroup = new THREE.Group();
+
+            const treePositions = [
+                { x: -7.5, z: 3.0, s: 1.2 },
+                { x: -9.0, z: -1.0, s: 1.5 },
+                { x: -6.5, z: -4.0, s: 1.0 }
+            ];
+
+            const matTrunk = new THREE.MeshStandardMaterial({ color: 0x4a3525, roughness: 0.9 });
+            const matLeaves = new THREE.MeshStandardMaterial({ color: 0x385e2b, roughness: 0.8 });
+
+            treePositions.forEach(p => {
+                const tree = new THREE.Group();
+                tree.position.set(p.x, 0, p.z);
+                tree.scale.set(p.s, p.s, p.s);
+
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 3.0, 8), matTrunk);
+                trunk.position.y = 1.5;
+                trunk.castShadow = true;
+                tree.add(trunk);
+
+                for(let i=0; i<4; i++) {
+                    const leaves = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1 - i*0.15, 1), matLeaves);
+                    leaves.position.set(
+                        (Math.random()-0.5)*0.4,
+                        3.0 + i*0.6,
+                        (Math.random()-0.5)*0.4
+                    );
+                    leaves.castShadow = true;
+                    tree.add(leaves);
+                }
+                envGroup.add(tree);
+            });
+
+            galleryGroup.add(envGroup);
+        }
+
+        function setCameraView(viewType) {
+            if (isFpsMode && fpsControls && typeof fpsControls.unlock === 'function') {
+                fpsControls.unlock();
+            }
+
+            // Actualizar estilo visual activo de botones de vista
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.className = 'view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-white/10 transition text-left';
+            });
+            const activeBtn = document.getElementById('btn-view-' + viewType);
+            if (activeBtn) {
+                activeBtn.className = 'view-btn flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition text-left';
+            }
+
+            const target = new THREE.Vector3(0, 1.4, -config.depth/2);
+            let pos = new THREE.Vector3();
+
+            switch(viewType) {
+                case 'photo':
+                    pos.set(0.1, 1.75, 5.2);
+                    target.set(0.1, 1.45, -config.depth/2);
+                    break;
+                case 'front':
+                    pos.set(0, 1.6, 7.5);
+                    break;
+                case 'top':
+                    pos.set(0, 9.0, -config.depth/2 + 0.1);
+                    target.set(0, 0, -config.depth/2);
+                    break;
+                case 'bottom':
+                    pos.set(0, 0.6, -1.0);
+                    target.set(0, 2.8, -config.depth/2);
+                    break;
+                case 'iso':
+                    pos.set(6.5, 5.5, 6.5);
+                    break;
+                case 'left':
+                    pos.set(-config.width/2 - 4.5, 1.8, -config.depth/2);
+                    break;
+                case 'right':
+                    pos.set(config.width/2 + 4.5, 1.8, -config.depth/2);
+                    break;
+                case 'back':
+                    pos.set(0, 3.0, -config.depth - 6.0);
+                    break;
+                case 'inside':
+                    pos.set(-0.2, 1.5, -1.2);
+                    target.set(1.5, 1.5, -config.depth + 0.5);
+                    break;
+            }
+
+            animateCameraTo(pos, target);
+        }
+
+        function animateCameraTo(targetPos, targetLookAt) {
+            if (!orbitControls) return;
+
+            const startPos = camera.position.clone();
+            const startTarget = orbitControls.target.clone();
+            const duration = 750;
+            const startTime = performance.now();
+
+            function updateCam() {
+                const now = performance.now();
+                const progress = Math.min((now - startTime) / duration, 1.0);
+                const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+                camera.position.lerpVectors(startPos, targetPos, ease);
+                orbitControls.target.lerpVectors(startTarget, targetLookAt, ease);
+                orbitControls.update();
+
+                if (progress < 1.0) {
+                    requestAnimationFrame(updateCam);
+                }
+            }
+            updateCam();
+        }
+
+        function resetCamera() {
+            setCameraView('photo');
+        }
+
+        function exitFpsMode() {
+            if (fpsControls && typeof fpsControls.unlock === 'function') {
+                fpsControls.unlock();
+            } else {
+                isFpsMode = false;
+                document.getElementById('crosshair').style.display = 'none';
+                document.getElementById('fps-instructions').classList.add('hidden');
+            }
+        }
+
+        function setupUIListeners() {
+            const bindInput = (id, fn) => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', fn);
+            };
+
+            bindInput('param-width', (e) => {
+                config.width = parseFloat(e.target.value);
+                document.getElementById('val-width').textContent = config.width.toFixed(2) + ' m';
+                rebuildGallery();
+            });
+
+            bindInput('param-depth', (e) => {
+                config.depth = parseFloat(e.target.value);
+                document.getElementById('val-depth').textContent = config.depth.toFixed(2) + ' m';
+                rebuildGallery();
+            });
+
+            bindInput('param-height', (e) => {
+                config.height = parseFloat(e.target.value);
+                document.getElementById('val-height').textContent = config.height.toFixed(2) + ' m';
+                rebuildGallery();
+            });
+
+            bindInput('param-beams', (e) => {
+                config.beamCount = parseInt(e.target.value);
+                document.getElementById('val-beams').textContent = config.beamCount + ' vigas';
+                rebuildGallery();
+            });
+
+            bindInput('param-roof-opacity', (e) => {
+                config.roofOpacity = parseFloat(e.target.value);
+                document.getElementById('val-roof-opacity').textContent = Math.round(config.roofOpacity * 100) + '%';
+                if (matRoof) matRoof.opacity = config.roofOpacity;
+            });
+
+            bindInput('param-sun', (e) => {
+                config.sunHour = parseFloat(e.target.value);
+                const hrs = Math.floor(config.sunHour);
+                const mins = Math.round((config.sunHour - hrs) * 60);
+                document.getElementById('val-sun').textContent = `${hrs.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')} Hs`;
+                updateSunPosition(config.sunHour);
+            });
+
+            const shadowsCheckbox = document.getElementById('toggle-shadows');
+            if (shadowsCheckbox) {
+                shadowsCheckbox.addEventListener('change', (e) => {
+                    config.shadowsEnabled = e.target.checked;
+                    if (renderer) renderer.shadowMap.enabled = config.shadowsEnabled;
+                    if (scene) {
+                        scene.traverse(child => {
+                            if (child.isMesh) child.castShadow = config.shadowsEnabled;
+                        });
+                    }
+                });
+            }
+
+            const furnitureCheckbox = document.getElementById('toggle-furniture');
+            if (furnitureCheckbox) {
+                furnitureCheckbox.addEventListener('change', (e) => {
+                    config.showFurniture = e.target.checked;
+                    rebuildGallery();
+                });
+            }
+
+            const grillCheckbox = document.getElementById('toggle-grill');
+            if (grillCheckbox) {
+                grillCheckbox.addEventListener('change', (e) => {
+                    config.showGrill = e.target.checked;
+                    rebuildGallery();
+                });
+            }
+
+            // Recorrido virtual FPS con manejo de excepciones por iframes restringidos
+            const btnFps = document.getElementById('btn-fps-mode');
+            if (btnFps) {
+                btnFps.addEventListener('click', () => {
+                    try {
+                        camera.position.set(0, 1.65, 3.0);
+                        if (fpsControls && typeof fpsControls.lock === 'function') {
+                            fpsControls.lock();
+                        } else {
+                            // Fallback interactivo
+                            isFpsMode = !isFpsMode;
+                            document.getElementById('crosshair').style.display = isFpsMode ? 'block' : 'none';
+                            document.getElementById('fps-instructions').classList.toggle('hidden', !isFpsMode);
+                        }
+                    } catch (e) {
+                        console.warn("Error al intentar activar modo FPS / PointerLock:", e);
+                    }
+                });
+            }
+
+            // Pantalla Completa encapsulada en try / catch seguro
+            const btnFullscreen = document.getElementById('btn-fullscreen');
+            if (btnFullscreen) {
+                btnFullscreen.addEventListener('click', () => {
+                    try {
+                        const docEl = document.documentElement;
+                        const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+
+                        if (!isFullscreen) {
+                            const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+                            if (req) {
+                                const p = req.call(docEl);
+                                if (p && typeof p.catch === 'function') {
+                                    p.catch(err => console.warn("Fullscreen denegado por política de sandbox:", err));
+                                }
+                            }
+                        } else {
+                            const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+                            if (exit) {
+                                const p = exit.call(document);
+                                if (p && typeof p.catch === 'function') {
+                                    p.catch(err => console.warn("Salir de fullscreen denegado:", err));
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.warn("API Fullscreen no soportada o bloqueada en este sandbox:", err);
+                    }
+                });
+            }
+
+            // Cargar imagen de fondo o plano
+            const bgInput = document.getElementById('input-bg-image');
+            if (bgInput) {
+                bgInput.addEventListener('change', (e) => {
+                    const file = e.target.files && e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            new THREE.TextureLoader().load(event.target.result, (texture) => {
+                                if (scene) {
+                                    texture.colorSpace = THREE.SRGBColorSpace;
+                                    scene.background = texture;
+                                }
+                            });
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
+
+            // Teclado para FPS
+            const onKeyDown = (event) => {
+                switch (event.code) {
+                    case 'KeyW': case 'ArrowUp': moveForward = true; break;
+                    case 'KeyA': case 'ArrowLeft': moveLeft = true; break;
+                    case 'KeyS': case 'ArrowDown': moveBackward = true; break;
+                    case 'KeyD': case 'ArrowRight': moveRight = true; break;
+                    case 'ShiftLeft': case 'ShiftRight': isSprinting = true; break;
+                    case 'Escape': exitFpsMode(); break;
+                }
+            };
+
+            const onKeyUp = (event) => {
+                switch (event.code) {
+                    case 'KeyW': case 'ArrowUp': moveForward = false; break;
+                    case 'KeyA': case 'ArrowLeft': moveLeft = false; break;
+                    case 'KeyS': case 'ArrowDown': moveBackward = false; break;
+                    case 'KeyD': case 'ArrowRight': moveRight = false; break;
+                    case 'ShiftLeft': case 'ShiftRight': isSprinting = false; break;
+                }
+            };
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+        }
+
+        function setStructureColor(colorHex) {
+            config.structureColor = parseInt(colorHex.replace('#', '0x'));
+            if (matMetal) matMetal.color.setHex(config.structureColor);
+
+            const colorNames = {
+                '#1f2428': 'Grafito Oscuro',
+                '#0f0f0f': 'Negro Mate',
+                '#3a3f45': 'Gris Acero',
+                '#e2e8f0': 'Blanco Galvalume'
+            };
+            const label = document.getElementById('val-structure-color');
+            if (label) label.textContent = colorNames[colorHex] || colorHex;
+
+            // Actualizar borde de selección
+            document.querySelectorAll('#color-swatches .color-btn').forEach(btn => {
+                if (btn.getAttribute('data-color') === colorHex) {
+                    btn.classList.add('border-emerald-400', 'scale-110');
+                    btn.classList.remove('border-transparent');
+                } else {
+                    btn.classList.remove('border-emerald-400', 'scale-110');
+                    btn.classList.add('border-transparent');
+                }
+            });
+        }
+
+        function rebuildGallery() {
+            buildFullScene();
+        }
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            const { width, height } = getViewportDimensions();
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = Math.min((time - prevTime) / 1000, 0.1);
+
+            if (isFpsMode && fpsControls) {
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                const speed = isSprinting ? 8.0 : 4.0;
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * speed * 10.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * speed * 10.0 * delta;
+
+                if (typeof fpsControls.moveRight === 'function') {
+                    fpsControls.moveRight(-velocity.x * delta);
+                    fpsControls.moveForward(-velocity.z * delta);
+                }
+
+                camera.position.y = 1.65;
+                camera.position.x = Math.max(-12, Math.min(12, camera.position.x));
+                camera.position.z = Math.max(-config.depth + 0.5, Math.min(10, camera.position.z));
+            } else if (orbitControls) {
+                orbitControls.update();
+            }
+
+            prevTime = time;
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        // Iniciar la carga segura cuando el DOM y los scripts se encuentren disponibles
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            ensureDependenciesAndStart();
+        } else {
+            window.addEventListener('DOMContentLoaded', ensureDependenciesAndStart);
+            window.addEventListener('load', ensureDependenciesAndStart);
+        }
+    </script>
+</body>
+</html>
